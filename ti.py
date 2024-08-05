@@ -6,73 +6,31 @@ import time
 import copy
 import serial
 #import jetson.gpio
-com_HMI = serial.Serial('COM27',115200,timeout = 0.2)
-com = serial.Serial('COM25', 115200,timeout = 0.2)
+com_HMI = serial.Serial('/dev/ttyUSB1',115200,timeout = 0.2)
+com = serial.Serial('/dev/ttyUSB0', 115200,timeout = 0.2)
 angle_rad = 0
 angle = 0
-#angle_rad,abs_1_x,abs_2_x,abs_3_x,abs_4_x,abs_5_x,abs_6_x,abs_7_x,abs_8_x,abs_9_x,abs_1_y,abs_2_y,abs_3_y,abs_4_y,abs_5_y,abs_6_y,abs_7_y,abs_8_y,abs_9_y,abs_b_1_x,abs_b_2_x,abs_b_3_x,abs_b_4_x,abs_b_5_x,abs_b_1_y,abs_b_2_y,abs_b_3_y,abs_b_4_y,abs_b_5_y,abs_w_1_x,abs_w_2_x,abs_w_3_x,abs_w_4_x,abs_w_5_x,abs_w_1_y,abs_w_2_y,abs_w_3_y,abs_w_4_y,abs_w_5_y = 0
-abs_1_x = 76
-abs_1_y = 56
-abs_2_x = 106
-abs_2_y = 56
-abs_3_x = 136
-abs_3_y = 56
 
-abs_4_x = 76
-abs_4_y = 88
-abs_5_x = 106
-abs_5_y = 88
-abs_6_x = 138
-abs_6_y = 88
-
-abs_7_x = 76
-abs_7_y = 120
-abs_8_x = 107
-abs_8_y = 120
-abs_9_x = 139
-abs_9_y = 120
-
-Positions = [[75,55],[106,55],[141,55],[77,86],[108,86],[141,86],[77,120],[108,120],[143,12],
-             [38,26],[38,55],[38,92],[38,125],[38,152],
-             [180,26],[180,56],[180,87],[180,120],[180,152]]
+Positions = [[75,55],[106,55],[141,55],[77,86],[108,86],[141,86],[77,120],[108,120],[143,12],#棋盘中九个中心点的坐标
+             [38,26],[38,55],[38,92],[38,125],[38,152],#五个黑棋的坐标
+             [180,26],[180,56],[180,87],[180,120],[180,152]]#五个白棋的坐标
 
 
 
-
-state_1 = 0
-state_2 = 0
-state_3 = 0
-state_4 = 0
-state_5 = 0
-state_6 = 0
-state_7 = 0
-state_8 = 0
-state_9 = 0
-width = 0
 height = 0
-black_1_state = 0
-black_2_state = 0
-black_3_state = 0
-black_4_state = 0
-black_5_state = 0
-white_1_state = 0
-white_2_state = 0
-white_3_state = 0
-white_4_state = 0
-white_5_state = 0
-k_real_frame = 0
-x_plus = -5.43
+weight = 0
+k_real_frame = 0    #坐标变换比例
+x_plus = -5.43    #机械臂原点与摄像头原点差值
 y_plus = -0.9
 # 0-->空  1 -->白   2-->黑
 board = [[0 for _ in range(3)] for _ in range(3)]
 threshold = 400                #棋子大小阈值 
 white_value_low = 160   #白色识别亮度，一般在150左右，最大值固定255
 white_saturation_high = 70   #白色识别饱和度，一般在60左右，最小值固定为0
-threshold_cheese = 80  #棋盘轮廓 0-255
 blue_saturation_low = 50  #绿色饱和度一般在100以下
 blue_Hue_low = 30    #绿色色调低
 blue_Hue_high = 90      #绿色色调高
-black_value_high = 90
+black_value_high = 90   #棋盘识别以及黑色棋子识别阈值
 blue_value_low = 50
 
 num_matrices = 3
@@ -81,7 +39,7 @@ board_steps = [[[0,0,0],[0,0,0],[0,0,0]]]
 board_black = [0 for _ in range (5)]
 board_white = [0 for _ in range (5)]
 #初始化摄像头
-cap = cv2.VideoCapture('http://192.168.2.41:4747/video?640x480')
+cap = cv2.VideoCapture(0)
 
 # 设置图像处理参数
 frame_width = 640
@@ -352,7 +310,7 @@ def computer_move_cf(board):
 
 def req_board():
     
-    global angle_rad,frame,mask_black,mask_blue,mask_white,white_1_state,white_2_state,white_3_state,white_4_state,white_5_state,black_1_state,black_2_state,black_3_state,black_4_state,black_5_state,state_1,state_2,state_3,state_4,state_5,state_6,state_7,state_8,state_9,threshold_cheese,white_saturation_high,white_value_low,black_value_high,blue_Hue_low,blue_Hue_high,blue_saturation_low,blue_value_low
+    global angle_rad,angle,frame,mask_black,mask_blue,mask_white,threshold_cheese,white_saturation_high,white_value_low,black_value_high,blue_Hue_low,blue_Hue_high,blue_saturation_low,blue_value_low
     ret, frame = cap.read()
     window_handle = cv2.namedWindow("result", cv2.WINDOW_AUTOSIZE) 
     
@@ -364,14 +322,20 @@ def req_board():
 
     lower_white = np.array([0, 0, white_value_low])       #设置白色识别阈值
     upper_white = np.array([180, white_saturation_high, 255])  #设置白色识别阈值
+
+    kernel = np.ones((5, 5), np.uint8)#卷积核
+  
     global hsv
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)#色彩空间转换
     mask_blue = cv2.inRange(hsv, lower_blue, upper_blue)  #取出蓝色空间
     mask_blue = cv2.GaussianBlur(mask_blue,(5,5),0,0) #高斯滤波
+    mask_blue = cv2.morphologyEx(mask_blue, cv2.MORPH_OPEN, kernel)#开操作
     mask_white = cv2.inRange(hsv,lower_white,upper_white)#取出白色空间
     mask_white = cv2.GaussianBlur(mask_white,(5,5),0,0)#高斯滤波
+    mask_white = cv2.morphologyEx(mask_white, cv2.MORPH_OPEN, kernel)#开操作
     mask_black = cv2.inRange(hsv,lower_black,upper_black)#取出hei色空间
     mask_black = cv2.GaussianBlur(mask_black,(5,5),0,0)#高斯滤波
+    mask_black = cv2.morphologyEx(mask_black, cv2.MORPH_OPEN, kernel)#开操作
     
     contours, _ = cv2.findContours(mask_black, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)#找棋盘外轮廓
     flag = 0
@@ -380,22 +344,22 @@ def req_board():
     global board_white
     
     for contour in contours:
-        if cv2.arcLength(contour,True)>700 and cv2.arcLength(contour,True)<1300:#######################################
+        if cv2.arcLength(contour,True)>1000 and cv2.arcLength(contour,True)<1300:#######################################
             flag = 1
-            rect = cv2.minAreaRect(contour)    #矩形拟合棋盘外廓
+            rect = cv2.minAreaRect(contour)    #最小矩形拟合棋盘外廓
             points = cv2.boxPoints(rect)               #转换为drawcounters可用
             points = np.int0(points)
             cv2.drawContours(frame,[points],0,(0,0,255),2)#画出棋盘轮廓
             center_x ,center_y = rect[0] #棋盘中心点坐标
             width , height= rect[1] #棋盘的长款，宽度
             angle = rect[2] #棋盘旋转角度
+            if angle>45:
+                angle =angle-90
             angle_rad = math.radians(angle)#转换为弧度制
             left_x = center_x + (height/2)*(math.cos(angle_rad)) - (width/2)*(math.sin(angle_rad))#棋盘左下角坐标
             left_y = center_y + (height/2)*(math.cos(angle_rad)) + (width/2)*(math.sin(angle_rad))
 
             #求出棋盘上九个格子的中心点位置
-            global cheese_1_x,cheese_1_y,cheese_2_x,cheese_2_y,cheese_3_x,cheese_3_y,cheese_4_x,cheese_4_y,cheese_5_x,cheese_5_y,cheese_6_x,cheese_6_y,cheese_7_x,cheese_7_y,cheese_8_x,cheese_8_y,cheese_9_x,cheese_9_y
-
             #棋子1
             cheese_1_x = center_x - (width/3)*(math.cos(angle_rad)) - (height/3)*(math.sin(angle_rad))#一号棋子x坐标
             cheese_1_y = center_y - (width/3)*(math.sin(angle_rad)) + (height/3)*(math.cos(angle_rad))#一号棋子y坐标
@@ -536,7 +500,8 @@ def req_board():
                 state_9 = 1
             if cv2.countNonZero(roi_9_b)>threshold:
                 state_9 = 2
-            
+
+            global board
             board[0][0] = state_1
             board[0][1] = state_4
             board[0][2] = state_7
@@ -547,8 +512,6 @@ def req_board():
             board[2][1] = state_6
             board[2][2] = state_9
             
-            #备下棋子检验
-            global board_black,board_white,black_1_x,black_1_y,black_2_x,black_2_y,black_3_x,black_3_y,black_4_x,black_4_y,black_5_x,black_5_y
             #黑棋1
             black_1_x = cheese_1_x-(cheese_5_x-cheese_1_x)
             black_1_y = cheese_1_y-(cheese_5_y-cheese_1_y)
@@ -610,7 +573,7 @@ def req_board():
             board_black[3] = black_4_state
             board_black[4] = black_5_state
             
-            global white_1_x,white_1_y,white_2_x,white_2_y,white_3_x,white_3_y,white_4_x,white_4_y,white_4_x,white_4_y,white_5_x,white_5_y            
+                        
             #白棋1
             white_1_x = cheese_7_x+(cheese_7_x-cheese_5_x)
             white_1_y = cheese_7_y-(cheese_5_y-cheese_7_y)
@@ -692,7 +655,7 @@ def req_board():
     cv2.waitKey(1)    
 
 
-def read_buffer():
+def read_buffer():    #清除cap缓存区
     for i in range(100):
         cap.grab() 
         cv2.waitKey(1)
@@ -751,13 +714,13 @@ def computer_first(num):
     #print_board(board)####
     current_position =[0,0]
 
-    from_p2p(10,num)
+    from_p2p(10,num)    #所有指令间隔1发两遍！
     time.sleep(1)
     from_p2p(10,num)
     board[num%3 - 1][num // 3] = 2
     board_steps.append(board)
     print(board)
-    time.sleep(23)
+    time.sleep(23)    #等待机械臂将棋子放入棋盘
 
     
     while True:
@@ -874,30 +837,9 @@ def user_first():
             com_HMI.write(data)
             break
 
-# def enval_global():
-#     abs_1_x,abs_1_y =  
-#     abs_2_x,abs_2_y = 
-#     abs_3_x,abs_3_y = 
-#     abs_4_x,abs_4_y = 
-#     abs_5_x,abs_5_y = 
-#     abs_6_x,abs_6_y = 
-#     abs_7_x,abs_7_y = 
-#     abs_8_x,abs_8_y = 
-#     abs_9_x,abs_9_y = 
-#     abs_b_1_x,abs_b_1_y = 
-#     abs_b_2_x,abs_b_2_y = 
-#     abs_b_3_x,abs_b_3_y = 
-#     abs_b_4_x,abs_b_4_y =
-#     abs_b_5_x,abs_b_5_y = 
-#     abs_w_1_x,abs_w_1_y = 
-#     abs_w_2_x,abs_w_2_y = 
-#     abs_w_3_x,abs_w_3_y = 
-#     abs_w_4_x,abs_w_4_y = 
-#     abs_w_5_x,abs_w_5_y = 
-    
 
-def rotate_point(abs_x, abs_y):
-    
+def rotate_point(location):    #指标三用，计算出旋转后棋子坐标
+    angle 
     return [abs_x, abs_y]
 
 def get_white_location(data):
@@ -925,7 +867,7 @@ def get_white_location(data):
     
     
 def get_black_location(data): 
-        # angle_rad =0
+        # angle_rad =0    
         # if data[2] == 0x01:
         #     location = rotate_point(abs_b_1_x,abs_b_1_y,angle_rad)
         #     return location
@@ -943,14 +885,14 @@ def get_black_location(data):
         #     return location
         # else:
         #     return [-1,-1]
-        
         location = [Positions[int(data[2])+8][0],Positions[int(data[2])+8][1]]
+        location = rotate_point(location)
         return location
 
 
 def get_cheese_location(data):     
-            location = rotate_point(Positions[int(data[2])][0],Positions[int(data[2])][1])
-            return location
+        location = Positions[int(data[2])][0],Positions[int(data[2])][1]
+        return location
 
             # if data[2] == 0x01:
             #     location = rotate_point(abs_1_x,abs_1_y,angle_rad)
@@ -1179,8 +1121,8 @@ if __name__ == "__main__":
         
         
         
-        # if cheese_position_init()==1:     
-        #     print("continue")
+        if cheese_position_init()==1:     
+            print("continue")
         
         if com_HMI.in_waiting > 0 :
             data = com_HMI.read(6)
@@ -1198,8 +1140,8 @@ if __name__ == "__main__":
                 computer_first(cheese_num)
             elif data[0] == 0x77:
                 user_first()
-            elif data[0] == 0x42:
-                if data[1] == 0x54:
+            elif data[0] == 0x42 and data[1] == 0x54 :
+                
                     cmd_go(0,0)
                     # data = b'\x42\x54\00\00\00\00\00\00\00\00'
                     # com.write(data)             
